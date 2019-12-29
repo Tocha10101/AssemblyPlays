@@ -1,11 +1,8 @@
 	.data
 
-size:		.space 	4
-height:		.space	4
-width:		.space	4
-temp:		.space	4
-bits_per_pixel:	.space	4
 header:		.space	54
+div_value:	.word	0xFFFFFFFF
+red:		.byte	0xff
 
 errorMessage:	.asciiz	"Can't open the file"
 success:	.asciiz "Correct execution"
@@ -15,14 +12,82 @@ s_size:		.asciiz	"Size:\t\t"
 s_width:	.asciiz	"Width:\t\t"
 s_height:	.asciiz "Height:\t\t"
 s_bpp:		.asciiz	"Bits Per Pixel:\t"
+s_padding:	.asciiz "Padding: \t"
 newline:	.asciiz "\n"
 
-input:		"C:\\Users\\Antek\\Desktop\\Assembly plays\\LAND.bmp"
+s_cos:		.asciiz "Enter a cosine of the angle * (2 ^ 32): "
+
+input:		"C:\\Users\\Antek\\Desktop\\Assembly plays\\input.bmp"
 output:		"C:\\Users\\Antek\\Desktop\\Assembly plays\\black.bmp"
+
+s_sin:		.asciiz "Enter a sine of the angle * (2 ^ 32): "
+
+.align	2
+width:		.space	4
+height:		.space	4
+cos:		.space	4
+sin:		.space	4
+
 	.text
 	.globl main
 	
 main:
+
+	# s2 - row length in bytes
+	# k1 - padding
+	# t8 - pointer to the allocated space for PIXELS
+	# t7 - size
+	# t6 - width
+	# t5 - height
+	# t4 - bits per pixel
+	# s0 - i (width) iterator
+	# s1 - j (height) iterator
+	# s7 - the red value to write
+	
+	
+	
+	
+	# reads the cosine
+	la	$a0, s_cos
+	li	$v0, 4
+	syscall
+	
+	li	$v0, 5
+	syscall
+	
+	sw	$v0, cos
+	move	$s0, $v0
+	
+	
+	li	$v0, 4
+	la	$a0, newline
+	syscall
+
+	la	$s2, div_value
+	divu	$s0, $s2
+	mfhi	$a0
+	
+	li	$v0, 1
+	syscall
+	
+	li	$v0, 4
+	la	$a0, newline
+	syscall
+	
+	# reads the sine
+	la	$a0, s_sin
+	li	$v0, 4
+	syscall
+	
+	li	$v0, 5
+	syscall
+	sw	$v0, sin
+	move	$s1, $v0
+	
+	li	$v0, 4
+	la	$a0, newline
+	syscall
+	
 	# otwieranie pliku
 	la	$a0, input
 	li	$a1, 0
@@ -50,6 +115,11 @@ main:
 	ulw	$t5, 22($k0)	# umieszczamy height w $t5
 	
 	ulw	$t4, 28($k0)	# bpp w t4
+	
+	# padding
+	li	$t2, 4
+	div	$t6, $t2
+	mfhi	$k1		# num of padding bytes
 	
 	
 	# WYPISANIE INFORMACJI
@@ -105,6 +175,19 @@ main:
 	li	$v0, 4
 	syscall
 	
+	# padding
+	la	$a0, s_padding
+	li	$v0, 4
+	syscall
+	
+	move	$a0, $k1
+	li	$v0, 1
+	syscall
+	
+	la	$a0, newline
+	li	$v0, 4
+	syscall
+	
 	# alokacja pami?ci na ca?y plik
 	li	$v0, 9
 	move	$a0, $t7	# ilosc pamieci
@@ -120,7 +203,38 @@ main:
 	syscall
 	
 	move	$t8, $v0	# pointer do zaalokowanych pixeli
-	
+		
+	move	$s0, $zero
+	move	$s1, $zero
+		
+	addi 	$s7, $zero, 3	# only in this place s7 is for multiplication
+	mul 	$s2, $t6, $s7
+	addu	$s2, $s2, $k1	# row_length in bytes
+	# let's color it into red	
+	loop_outter:
+		la	$t9, ($t8)	# perhaps you don't need it in future
+		mul	$t3, $s2, $s1	# j mnozymy przez row_length
+		addu	$t9, $t9, $t3	# do odpowiedniego wiersza
+		
+		li	$v0, 1
+		move	$a0, $s1
+		syscall
+		li	$v0, 4
+		la	$a0, newline
+		syscall
+		
+		loop_inner:
+			lb	$s7, red
+			sb	$zero, ($t9)
+			sb	$zero, 1($t9)
+			sb	$s7, 2($t9)
+			addi	$t9, $t9, 3		# 3 bajty na pixel -> moving to the next pixel
+			addi	$s0, $s0, 1		# i++
+			blt	$s0, $t6, loop_inner	# i < width
+			move	$s0, $zero
+		
+		addi	$s1, $s1, 1			# j++
+		blt	$s1, $t5, loop_outter		# j < height
 	
 	# wczytanie pliku do pamieci
 	move	$a0, $t0
@@ -145,20 +259,6 @@ main:
 	
 	# sprawdzenie czy sie poprawnie otworzyl
 	bltz	$t0, error
-	
-	
-	# a variable to count the iterations
-	# li	$t2, 0
-	# move	$k0, $t1
-	# loop_h:
-	# 	lb	$t3, ($t1)	# let's see if it works
-	#	sb	$t3, header
-	#	addiu	$t1, $t1, 1
-	#	addiu	$t2, $t2, 1
-	#	bne	$t2, 53, loop_h
-	
-	
-	move $k0, $t1
 	# HEADER WRITING
 	la	$a0, ($t0)
 	la	$a1, header
@@ -166,7 +266,9 @@ main:
 	li	$v0, 15
 	syscall
 	
-	# PIXEL WRITING
+	# modifying pixels
+	
+	# PIXEL WRITING TO FILE
 	la	$a1, ($t8)
 	subiu	$t7, $t7, 54
 	la	$a2, ($t7)
@@ -187,9 +289,6 @@ main:
 	# koniec programu
 	la	$v0, 10
 	syscall
-	
-	
-	
 	
 error:
 	li	$v0, 4
